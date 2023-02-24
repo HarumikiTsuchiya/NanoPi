@@ -1,8 +1,7 @@
 import os
 import time
 import datetime
-
-# from smbus2 import SMBus
+from smbus2 import SMBus
 
 
 class Nanopi_control:
@@ -65,7 +64,7 @@ class RX8900A:
     def __init__(self):
 
         busNum = 0
-        self.smbus2 = self.SMBus(busNum)
+        self.smbus2 = SMBus(busNum)
         self.addr = 0x32
 
     def hex2dec(self, num):
@@ -253,4 +252,9 @@ if __name__ == "__main__":
 
     nanopi = Nanopi_control()
     nanopi.led_output("RED", 1)
-    nanopi.shutdown()
+    # nanopi.shutdown()
+
+    rx8900a = RX8900A()
+    rx8900a.read_time()
+    rx8900a.read_alarm_time()
+    rx8900a.read_control_reg
