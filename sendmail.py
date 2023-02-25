@@ -45,16 +45,20 @@ def sendmail(mail_to="", mail_cc="", mail_bcc="", mail_data="", subject=""):
         data = ""
         buf = ""
         print("Mail Send ERR!")
+        return 0
     else:
         data = ""
         buf = ""
         print("Mail Send OK!")
+        return 1
 
 
 if __name__ == "__main__":
 
-    sendmail(
+    ret = sendmail(
         mail_to="harumiki.tsuchiya@gmail.com",
         mail_data="Nano Pi Wake Up!!",
         subject="Nano Pi Wake up",
     )
+    if ret:
+        print("True")
