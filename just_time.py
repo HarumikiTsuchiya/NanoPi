@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import nanopi_timer
 import sendmail
 import os
