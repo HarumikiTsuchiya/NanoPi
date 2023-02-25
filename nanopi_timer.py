@@ -1,10 +1,10 @@
 import os
 import time
 import datetime
-
-# from smbus2 import SMBus
+from smbus2 import SMBus
 import serial
 import json
+from dotenv import load_dotenv
 
 
 class Nanopi_control:
@@ -15,6 +15,14 @@ class Nanopi_control:
             "R": "3",
         }
         self.shutdown_port = "1"
+        # 環境変数読込
+        load_dotenv()
+        self.env_ping_target = os.getenv("ping_target")
+
+    def led_clear(self):
+        self.led_output("G", 0)
+        self.led_output("Y", 0)
+        self.led_output("R", 0)
 
     def led_output(self, color, onoff):
         self.color = color
@@ -44,6 +52,22 @@ class Nanopi_control:
             os.system(command2)
         else:
             print("Error LED Output!!")
+
+    def check_ping(self):
+        command = "ping -c1 -w1 " + self.env_ping_target
+        print(command)
+        ret = os.system(command)
+        print(ret)
+        return ret
+
+    def check_network(self):
+        ret = self.check_ping()
+        if ret == 0:
+            self.led_clear()
+            self.led_output("G", 1)
+        else:
+            self.led_clear()
+            self.led_output("R", 1)
 
     def shutdown(self):
 
@@ -110,22 +134,18 @@ class serial_control:
 class alarm_set:
     def __init__(self):
         self.alarm_file = "./Alarm_Time.json"
+        self.rx8900a = RX8900A()
 
-    def next_alaem_time(self):
+    def next_alaem_time(self, now_hour, now_min):
 
         f = open(self.alarm_file, "r")
         data = json.load(f)
 
-        now = datetime.datetime.now()
-        print(now)
-
-        now_hour = now.hour
-        now_min = now.minute
-
+        print("Check Time {}:{}".format(now_hour, now_min))
         now_time = now_hour * 100 + now_min
 
         alarm_hour = 0
-        alaem_min = 0
+        alarm_min = 0
 
         for i in data["Alarm_Time"]:
             if int(i) > now_time:
@@ -135,26 +155,30 @@ class alarm_set:
                 break
         print("Next Alarm Time {}:{}".format(alarm_hour, alarm_min))
 
-        return alarm_hour, alaem_min
+        return alarm_hour, alarm_min
 
-    def alarm_set(self):
+    def alarm_set(self, alarm_set_hour, alarm_set_min):
 
-        rx8900a = RX8900A()
+        self.rx8900a.clr_flag_reg()
 
-        rx8900a.clr_flag_reg()
+        self.rx8900a.read_flag_reg()
 
-        rx8900a.read_flag_reg()
+        self.rx8900a.write_alarm_time(alarm_set_hour, alarm_set_min)
 
-        alarm_hour, alarm_min = self.next_alaem_time()
-
-        rx8900a.write_alarm_time(alarm_hour, alarm_min)
-
-        ret = rx8900a.read_alarm_time()
+        ret = self.rx8900a.read_alarm_time()
         print(ret)
 
-        rx8900a.set_AIE()
+    def alarm_start(self):
 
-        rx8900a.read_control_reg()
+        self.rx8900a.set_AIE()
+
+        self.rx8900a.read_control_reg()
+
+    def alarm_stop(self):
+
+        self.rx8900a.reset_AIE()
+
+        self.rx8900a.read_control_reg()
 
 
 class RX8900A:
@@ -347,13 +371,14 @@ class RX8900A:
 
 if __name__ == "__main__":
 
-    # nanopi = Nanopi_control()
+    nanopi = Nanopi_control()
     # nanopi.led_output("RED", 1)
     # nanopi.shutdown()
+    nanopi.check_ping()
 
     # rx8900a = RX8900A()
     # rx8900a.read_time()
     # rx8900a.read_alarm_time()
     # rx8900a.read_control_reg
-    alarm = alarm_set()
-    alarm.next_alaem_time()
+    # alarm = alarm_set()
+    # alarm.next_alaem_time(12, 58)
