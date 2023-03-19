@@ -5,7 +5,8 @@ from smbus2 import SMBus
 import serial
 import json
 from dotenv import load_dotenv
-
+import ntplib
+import subprocess
 
 class Nanopi_control:
     def __init__(self):
@@ -15,6 +16,8 @@ class Nanopi_control:
             "R": "3",
         }
         self.shutdown_port = "1"
+        self.shutdown_enable_port="10"
+
         # 環境変数読込
         load_dotenv()
         self.env_ping_target = os.getenv("ping_target")
@@ -65,30 +68,54 @@ class Nanopi_control:
         if ret == 0:
             self.led_clear()
             self.led_output("G", 1)
+            return "OK"
         else:
             self.led_clear()
             self.led_output("R", 1)
+            return "NG"
 
-    def shutdown(self):
-
-        command1 = "gpio mode " + self.shutdown_port + " out"
-        command2 = "gpio write " + self.shutdown_port + " 1"
-        command3 = "gpio write " + self.shutdown_port + " 0"
-        command4 = "shutdown -h now "
-
+    def shutdown_check(self):
+        command1 = "gpio mode " + self.shutdown_enable_port + " in"
+        command2 = ["gpio read " +  self.shutdown_enable_port]
         print(command1)
         os.system(command1)
         print(command2)
-        os.system(command2)
-        time.sleep(1)
-        print(command3)
-        os.system(command3)
-        print(command4)
-        os.system(command4)
+        ret=subprocess.getoutput(command2)
+        print(ret)
+        if "1" in ret:
+            print("Enable Shutdown")
+            return "ENA"
+
+        print("Disable Shutdown")
+        return "DIS"
+
+
+
+    def shutdown(self):
+
+        ret=self.shutdown_check()
+
+        if "ENA" in ret:
+            command1 = "gpio mode " + self.shutdown_port + " out"
+            command2 = "gpio write " + self.shutdown_port + " 1"
+            command3 = "gpio write " + self.shutdown_port + " 0"
+            command4 = "shutdown -h now "
+
+            print(command1)
+            os.system(command1)
+            print(command2)
+            os.system(command2)
+            time.sleep(1)
+            print(command3)
+            os.system(command3)
+            print(command4)
+            os.system(command4)
 
 
 class serial_control:
     def __init__(self):
+        self.esc_on_port = "6"
+
         self.port = "/dev/ttyS1"
         self.rate = 9600
 
@@ -100,13 +127,16 @@ class serial_control:
         print(command)
         buf = ""
         data = ""
-
-        self.ser.write(command + "\r\n".encode("utf-8"))
+        send_command=command + "\r\n"
+        self.ser.write(send_command.encode("utf-8"))
 
         while 1:
 
             # print(frm)
             buf = self.ser.readline()
+            if buf==b'':
+                print("Time out")
+                return "NG"
             try:
                 buf.decode()
             except:
@@ -130,13 +160,27 @@ class serial_control:
 
         self.ser.write(send_binary)
 
+    def send_ESCON(self):
+        print("Send ESC+ON")
+        command1 = "gpio mode " + self.esc_on_port + " out"
+        command2 = "gpio write " + self.esc_on_port + " 0"
+        time.sleep(0.1)
+        command3 = "gpio write " + self.esc_on_port + " 1"
+        time.sleep(0.1)
+        command4 = "gpio write " + self.esc_on_port + " 0"
+
+        os.system(command1)
+        os.system(command2)
+        os.system(command3)
+        os.system(command4)
+        time.sleep(5)
 
 class alarm_set:
     def __init__(self):
-        self.alarm_file = "./Alarm_Time.json"
+        self.alarm_file = "/home/tsuchiya/NanoPi/Alarm_Time.json"
         self.rx8900a = RX8900A()
 
-    def next_alaem_time(self, now_hour, now_min):
+    def next_alarm_time(self, now_hour, now_min):
 
         f = open(self.alarm_file, "r")
         data = json.load(f)
@@ -180,6 +224,24 @@ class alarm_set:
 
         self.rx8900a.read_control_reg()
 
+class MCP3425:
+    def __init__(self):
+        busNum = 0
+        self.smbus2 = SMBus(busNum)
+        self.addr = 0x68
+        self.config = 0b10011000
+
+    def init(self):
+        self.smbus2.write_byte(self.addr, self.config)
+        time.sleep(0.2)
+
+    def read_data(self):
+        data = []
+        data = self.smbus2.read_i2c_block_data(self.addr, 0, 2)
+        count = data[0] << 8 | data[1]
+        volt = round((2.048 * count / 32767) * 11,4)
+        #print(volt)
+        return volt
 
 class RX8900A:
     def __init__(self):
@@ -335,6 +397,45 @@ class RX8900A:
             self.write_rtc_time()
             self.write_alarm_time(0, 0)
 
+    def write_ntp_time(self):
+        print("Write NTP Time")
+        ntp_server_host="ntp.nict.jp"
+        ntp_client = ntplib.NTPClient()
+        try:
+            ret=ntp_client.request(ntp_server_host)
+        except:
+            print("NG")
+            return "NG"
+        else:
+            now=datetime.datetime.fromtimestamp(ret.tx_time)
+            print(now)
+
+            SEC = self.dec2hex(now.second)
+            MIN = self.dec2hex(now.minute)
+            HOUR = self.dec2hex(now.hour)
+            WEEK = 0x01
+            DAY = self.dec2hex(now.day)
+            MONTH = self.dec2hex(now.month)
+            YEAR = self.dec2hex(now.year - 2000)
+
+            if now.weekday() == 0:
+                WEEK = 0x02
+            if now.weekday() == 1:
+                WEEK = 0x04
+            if now.weekday() == 2:
+                WEEK = 0x08
+            if now.weekday() == 3:
+                WEEK = 0x10
+            if now.weekday() == 4:
+                WEEK = 0x20
+            if now.weekday() == 5:
+                WEEK = 0x40
+            if now.weekday() == 6:
+                WEEK = 0x01
+
+            self.write_time(SEC, MIN, HOUR, WEEK, DAY, MONTH, YEAR)
+        return "OK"
+
     def write_rtc_time(self):
         print("Write RTC Time")
         now = datetime.datetime.now()
@@ -371,14 +472,26 @@ class RX8900A:
 
 if __name__ == "__main__":
 
-    nanopi = Nanopi_control()
-    # nanopi.led_output("RED", 1)
-    # nanopi.shutdown()
-    nanopi.check_ping()
+    #nanopi = serial_control()
+    #nanopi.send_command("VS")
 
-    # rx8900a = RX8900A()
-    # rx8900a.read_time()
-    # rx8900a.read_alarm_time()
+    #nanopi = Nanopi_control()
+    # nanopi.led_output("RED", 1)
+    #nanopi.shutdown()
+    #nanopi.shutdown_check()
+    #nanopi.check_ping()
+
+    #rx8900a = RX8900A()
+    #rx8900a.init()
+    #rx8900a.read_time()
+    #rx8900a.read_alarm_time()
+    #ret=rx8900a.write_ntp_time()
+    #print(ret)
     # rx8900a.read_control_reg
     # alarm = alarm_set()
     # alarm.next_alaem_time(12, 58)
+
+    adc = MCP3425()
+    adc.init()
+    ret = adc.read_data()
+    print(ret)

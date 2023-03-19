@@ -1,0 +1,10 @@
+VS
+LS5
+TS0
+IVS
+SN1
+IVT**.**:**:00
+SN2
+IV00:05:00
+LS5
+TS2
